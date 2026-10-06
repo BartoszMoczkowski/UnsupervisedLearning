@@ -1,0 +1,16 @@
+{
+  "name": "unsupervised-learning",
+  "build": { "dockerfile": "Dockerfile", "context": ".." },
+  "runArgs": ["--gpus", "all", "--ipc=host"],
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter"
+      ]
+    }
+  },
+  "postCreateCommand": "uv sync"
+}

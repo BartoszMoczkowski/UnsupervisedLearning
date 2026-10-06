@@ -1,0 +1,31 @@
+# Unsupervised Learning
+
+Python + CUDA + PyTorch + einops environment, running in a VS Code devcontainer with dependencies managed by [uv](https://docs.astral.sh/uv/).
+
+## Host prerequisites
+
+- Docker Desktop with WSL2 backend
+- Up-to-date NVIDIA GPU driver (Windows driver exposes the GPU to WSL2; no CUDA toolkit needed on the host)
+
+## Getting started
+
+1. Open this folder in VS Code (with the Dev Containers extension).
+2. Run **Dev Containers: Reopen in Container**.
+3. On first start, `uv sync` runs automatically and creates `.venv` from `uv.lock`.
+
+## Managing dependencies
+
+```bash
+uv add <package>      # add a dependency
+uv remove <package>   # remove a dependency
+uv sync               # install/update the environment from uv.lock
+uv run python ...     # run inside the project environment
+```
+
+## Verify the GPU
+
+```bash
+uv run python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+This should print `True` followed by your GPU's name.
