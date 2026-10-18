@@ -5,6 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
-RUN useradd -m -s /bin/bash vscode
-USER vscode
+RUN useradd -m -s /bin/bash unsupervised \
+    && mkdir -p /workspace/.venv \
+    && chown -R unsupervised:unsupervised /workspace
+USER unsupervised
 WORKDIR /workspace

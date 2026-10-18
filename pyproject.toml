@@ -15,6 +15,10 @@ dependencies = [
     "tqdm",
     "jupyter",
     "ipykernel",
+    "polars>=2.0.0",
+    "huggingface-hub[hf-xet]>=2.2.0",
+    "marimo[lsp]>=0.25.1",
+    "hf-transfer>=0.1.9",
 ]
 
 [tool.uv.sources]
