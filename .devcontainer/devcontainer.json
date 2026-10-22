@@ -2,10 +2,6 @@
   "name": "unsupervised-learning",
   "build": { "dockerfile": "Dockerfile", "context": ".." },
   "runArgs": ["--gpus", "all", "--ipc=host"],
-  "mounts": [
-    "source=ul-venv,target=/workspaces/UnsupervisedLearning/.venv,type=volume",
-    "source=Q:/training-data,target=/data,type=bind"
-  ],
   "containerEnv": {
     "TRAINING_DATA_DIR": "/data/wikiart-parquet"
   },
