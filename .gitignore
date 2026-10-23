@@ -3,3 +3,6 @@ __pycache__/
 .ipynb_checkpoints/
 *.parquet
 .zed
+router/extracted_images/
+wikiart-parquet/
+router/prototype_images
