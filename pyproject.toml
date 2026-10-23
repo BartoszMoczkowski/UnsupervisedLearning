@@ -19,6 +19,7 @@ dependencies = [
     "huggingface-hub[hf-xet]>=2.2.0",
     "marimo[lsp]>=0.25.1",
     "hf-transfer>=0.1.9",
+    "nvidia-dali-cuda120>=2.3.0",
 ]
 
 [tool.uv.sources]
