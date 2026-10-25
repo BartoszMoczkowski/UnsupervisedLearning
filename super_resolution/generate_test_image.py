@@ -16,10 +16,6 @@ from torchvision.transforms import v2 as tv2
 
 from generative_adversial_network import GeneratorNetwork
 
-IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-IMAGENET_STD = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True, help="path to srgan.pt")
@@ -63,11 +59,16 @@ def main():
     generator.to(device).eval()
     print(f"loaded checkpoint from epoch {ckpt.get('epoch', '?')}")
 
-    # normalize the way training did, run, unnormalize
-    lr_norm = (lr - IMAGENET_MEAN) / IMAGENET_STD
+    # Match gan_train.py: scale [0, 1] to [-1, 1], then invert it.
+    lr_norm = lr * 2.0 - 1.0
     with torch.no_grad():
         sr = generator(lr_norm.unsqueeze(0).to(device)).squeeze(0).cpu()
-    sr = (sr * IMAGENET_STD + IMAGENET_MEAN).clamp(0, 1)
+    print(
+        f"input mean={lr_norm.mean().item():.4f}; raw SR "
+        f"min={sr.min().item():.4f}, max={sr.max().item():.4f}, "
+        f"mean={sr.mean().item():.4f}"
+    )
+    sr = ((sr + 1.0) / 2.0).clamp(0, 1)
 
     # bicubic baseline at the same target size
     bicubic = tv2.functional.resize(lr, [h, w], antialias=True)
