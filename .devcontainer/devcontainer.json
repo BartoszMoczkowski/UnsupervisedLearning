@@ -4,7 +4,7 @@
   "runArgs": ["--gpus", "all", "--ipc=host"],
   "mounts": [
     "source=ul-venv,target=/workspaces/UnsupervisedLearning/.venv,type=volume",
-    "source=Q:/training-data,target=/data,type=bind"
+    "source=${localEnv:UL_DATA_DIR},target=/data,type=bind"
   ],
   "containerEnv": {
     "TRAINING_DATA_DIR": "/data/wikiart-parquet"
@@ -12,6 +12,9 @@
   "remoteUser": "unsupervised",
   "customizations": {
     "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/workspaces/UnsupervisedLearning/.venv/bin/python"
+      },
       "extensions": [
         "ms-python.python",
         "ms-python.vscode-pylance",
