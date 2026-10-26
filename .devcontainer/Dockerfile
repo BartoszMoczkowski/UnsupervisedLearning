@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 RUN useradd -m -s /bin/bash unsupervised \
-    && mkdir -p /workspace/.venv \
-    && chown -R unsupervised:unsupervised /workspace
+    && mkdir -p /workspaces/UnsupervisedLearning/.venv \
+    && chown -R unsupervised:unsupervised /workspaces
 USER unsupervised
-WORKDIR /workspace
+WORKDIR /workspaces/UnsupervisedLearning

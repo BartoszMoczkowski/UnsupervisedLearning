@@ -6,7 +6,7 @@ Python + CUDA + PyTorch + einops environment, running in a VS Code devcontainer 
 
 - Docker Desktop with WSL2 backend
 - Up-to-date NVIDIA GPU driver (Windows driver exposes the GPU to WSL2; no CUDA toolkit needed on the host)
-
+- Environment variable `UL_DATA_DIR` set on the host (folder mounted as `/data` in the container), e.g. `setx UL_DATA_DIR "C:\path\to\training-data"`, then restart VS Code.
 ## Getting started
 
 1. Open this folder in VS Code (with the Dev Containers extension).
