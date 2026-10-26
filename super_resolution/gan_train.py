@@ -48,7 +48,7 @@ class WikiartDataset(Dataset):
         img = torchvision.io.decode_image(str(self.files[index]), mode="RGB")  # uint8 CHW
         return torch.stack([self.crop(img) for _ in range(self.n_crops)])
 
-def save_checkpoint(epoch, generator, discriminator, gen_opt):
+def save_checkpoint(epoch, generator, discriminator, gen_opt, filename="srgan.pt"):
     CKPT_DIR.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
@@ -57,11 +57,12 @@ def save_checkpoint(epoch, generator, discriminator, gen_opt):
             "discriminator": discriminator.state_dict(),
             "generator_optimizer": gen_opt.state_dict(),
         },
-        CKPT_DIR / "srgan.pt",
+        CKPT_DIR / filename,
     )
-    print(f"checkpoint saved at epoch {epoch + 1}", flush=True)
+    print(f"checkpoint saved at epoch {epoch + 1}: {CKPT_DIR / filename}", flush=True)
 
 def main():
+
     N_CROPS = 1
     SAVE_EVERY = 10
     lr_size = 48
@@ -85,14 +86,11 @@ def main():
         persistent_workers=True
     )
 
-    random_transform = tv2.TrivialAugmentWide()
-
+    # Keep SR targets photometrically faithful: random crops/flips are already in the dataset.
     lr_resize = tv2.Resize((lr_size,lr_size),antialias=True)
-    IMAGENET_MEAN = [0.485, 0.456, 0.406]
-    IMAGENET_STD  = [0.229, 0.224, 0.225]
     normalize = tv2.Compose([
         tv2.ToDtype(torch.float32, scale=True),
-        tv2.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
+        tv2.Normalize(mean=3*[0.5], std=3*[0.5])  # [0, 1] -> [-1, 1]
     ])
 
 
@@ -114,30 +112,26 @@ def main():
         n_dense_1=128,
     ).to(target_device)
 
-    N_SEEN_IMAGES = int(2e6)
-    print(len(train_ds))
+    N_SEEN_IMAGES = int(1e6)
     n_epochs = int(N_SEEN_IMAGES//len(train_ds))
     lr = 1e-4
-#https://github.com/NVIDIA/DALI this shit is too slow
     generator_optimizer = torch.optim.Adam(generator.parameters(),lr=lr, betas=(0.9, 0.999))
+    discriminator_optimizer = torch.optim.Adam(discriminator.parameters(),lr=lr, betas=(0.9, 0.999))
     print(
         f"generator_parameters={sum(p.numel() for p in generator.parameters()):,} "
         f"discriminator_parameters={sum(p.numel() for p in discriminator.parameters()):,}",
         flush=True,
     )
     generator.train()
-    for epoch in tqdm(range(n_epochs)):
+    for epoch in tqdm(range(n_epochs), desc="MSE pretraining"):
         for batch_idx, hr_img in enumerate(train_loader):
             hr_img = hr_img.to(target_device, non_blocking=is_cuda)
             hr_img = hr_img.flatten(0, 1)
-            hr_img = random_transform(hr_img)
 
             lr_img = lr_resize(hr_img)
 
             hr_img = normalize(hr_img)
             lr_img = normalize(lr_img)
-
-            # discriminator_optimizer = torch.optim.Adam(discriminator.parameters(),lr=lr, betas=(0.9, 0.999))
 
             generator_optimizer.zero_grad(set_to_none=True)
             sr_img = generator(lr_img)
@@ -145,10 +139,62 @@ def main():
             loss.backward()
             generator_optimizer.step()
 
-            if (epoch + 1) % SAVE_EVERY == 0:
-                save_checkpoint(epoch, generator, discriminator, generator_optimizer)
 
-    save_checkpoint(int(n_epochs), generator, discriminator, generator_optimizer)
+    # Keep a clean recovery point; never overwrite it during adversarial training.
+    save_checkpoint(
+        n_epochs - 1, generator, discriminator, generator_optimizer,
+        filename="srresnet.pt",
+    )
+
+
+    # SRGAN alternates D and G from the start; do not pretrain D against a frozen G.
+    generator.train()
+    discriminator.train()
+    bce_loss = torch.nn.BCEWithLogitsLoss()
+    for epoch in tqdm(range(n_epochs), desc="Adversarial training"):
+        for batch_idx, hr_img in enumerate(train_loader):
+            hr_img = hr_img.to(target_device, non_blocking=is_cuda)
+            hr_img = hr_img.flatten(0, 1)
+
+            lr_img = lr_resize(hr_img)
+
+            hr_img = normalize(hr_img)
+            lr_img = normalize(lr_img)
+
+            discriminator.requires_grad_(True)
+            with torch.no_grad():
+                sr_img = generator(lr_img)
+            discriminator_optimizer.zero_grad(set_to_none=True)
+
+            d_fake = discriminator(sr_img)
+            d_real = discriminator(hr_img)
+            d_loss = bce_loss(d_fake,torch.zeros_like(d_fake)) + bce_loss(d_real,torch.ones_like(d_real))
+
+            d_loss.backward()
+            discriminator_optimizer.step()
+
+            # Use the same D mode for fake batches in both updates; freeze only weights.
+            discriminator.requires_grad_(False)
+            sr_img = generator(lr_img)
+            generator_optimizer.zero_grad(set_to_none=True)
+
+            d_fake_adv = discriminator(sr_img)
+            adv_loss = bce_loss(d_fake_adv,torch.ones_like(d_fake_adv))
+            content_loss = F.mse_loss(sr_img, hr_img)
+
+            loss = content_loss + adv_loss * 1e-3
+            loss.backward()
+            generator_optimizer.step()
+
+
+
+        if (epoch + 1) % SAVE_EVERY == 0:
+            save_checkpoint(epoch, generator, discriminator, generator_optimizer)
+
+    save_checkpoint(n_epochs - 1, generator, discriminator, generator_optimizer)
+
+
+
 
 if __name__ == "__main__":
     main()
