@@ -9,6 +9,42 @@ class PreprocessingStep(ABC):
         pass
 
 
+class RandomCropAugment(PreprocessingStep):
+    """Paper-style HR crop + spatial augmentation before any DCT transform (plan 2.2):
+    random crop, horizontal/vertical flips, and 90-degree rotations."""
+
+    def __init__(self, hr_size: int) -> None:
+        self.crop = tv2.Compose([
+            tv2.RandomCrop(hr_size),
+            tv2.RandomHorizontalFlip(),
+            tv2.RandomVerticalFlip(),
+            tv2.RandomApply([tv2.RandomRotation((90, 90))], p=0.5),
+        ])
+
+    def apply(self, img: torch.Tensor):
+        return self.crop(img)
+
+
+class BicubicDownsample(PreprocessingStep):
+    """LR generation from cropped HR by bicubic downsampling with antialiasing (plan 2.2)."""
+
+    def __init__(self, scale: int = 4) -> None:
+        self.scale = scale
+
+    def apply(self, img: torch.Tensor):
+        height, width = img.shape[-2:]
+        if height % self.scale or width % self.scale:
+            raise ValueError(
+                f"HR crop {height}x{width} not divisible by scale {self.scale}"
+            )
+        resize = tv2.Resize(
+            (height // self.scale, width // self.scale),
+            interpolation=tv2.InterpolationMode.BICUBIC,
+            antialias=True,
+        )
+        return resize(img)
+
+
 
 class RandomCropFlip(PreprocessingStep):
 
@@ -47,3 +83,5 @@ class PreprocessingStepList(Enum):
     RANDOM_CROP_FLIP = RandomCropFlip
     SQUARE_RESIZE = SquareResize
     INT8_TO_01_FLOAT = Int8To01Float
+    RANDOM_CROP_AUGMENT = RandomCropAugment
+    BICUBIC_DOWNSAMPLE = BicubicDownsample

@@ -5,6 +5,7 @@ import comet_ml
 import torch
 from tqdm import tqdm
 
+from super_resolution.configs.elements.loss import DetailedGeneratorLoss
 from super_resolution.configs.elements.stage import Experiment, Stage, StageState
 
 
@@ -61,6 +62,7 @@ def _train_stage(
     previous_generator_state: dict | None,
     previous_discriminator_state: dict | None,
     target_device: str,
+    comet_experiment=None,
 ) -> StageState:
     generator = stage.generator_model.model_config.build().to(target_device)
     generator_optimizer = stage.generator_model.optimizer_config.build(generator)
@@ -123,10 +125,18 @@ def _train_stage(
 
             generator_optimizer.zero_grad(set_to_none=True)
             sr_img = generator(lr_img)
-            loss = stage.generator_loss.calculate_loss(sr_img, hr_img, discriminator)
+            if isinstance(stage.generator_loss, DetailedGeneratorLoss):
+                loss_terms = stage.generator_loss.calculate_loss_terms(sr_img, hr_img, discriminator)
+                loss = loss_terms["total"]
+            else:
+                loss = stage.generator_loss.calculate_loss(sr_img, hr_img, discriminator)
             loss.backward()
             generator_optimizer.step()
             n_seen_images += hr_img.shape[0]
+            if comet_experiment is not None and isinstance(stage.generator_loss, DetailedGeneratorLoss):
+                comet_experiment.log_metrics(
+                    {f"train_{key}": value.item() for key, value in loss_terms.items()}
+                )
 
         n_epochs_completed += 1
         state = _save_state(
@@ -160,6 +170,7 @@ def train_experiment(experiment: Experiment):
                 previous_generator_state,
                 previous_discriminator_state,
                 target_device,
+                comet_experiment,
             )
             previous_generator_state = state["generator"]
             previous_discriminator_state = state.get("discriminator")

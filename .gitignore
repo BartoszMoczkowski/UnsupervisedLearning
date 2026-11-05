@@ -6,3 +6,5 @@ __pycache__/
 router/extracted_images/
 wikiart-parquet/
 router/prototype_images
+experiments_data/
+super_resolution/checkpoints/
