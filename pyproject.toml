@@ -21,6 +21,7 @@ dependencies = [
     "hf-transfer>=0.1.9",
     "nvidia-dali-cuda120>=2.3.0",
     "pyarrow>=26.0.0",
+    "comet-ml>=3.58.9",
 ]
 
 [tool.uv.sources]

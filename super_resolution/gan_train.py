@@ -90,7 +90,7 @@ def main():
     lr_resize = tv2.Resize((lr_size,lr_size),antialias=True)
     normalize = tv2.Compose([
         tv2.ToDtype(torch.float32, scale=True),
-        tv2.Normalize(mean=3*[0.5], std=3*[0.5])  # [0, 1] -> [-1, 1]
+        # tv2.Normalize(mean=3*[0.5], std=3*[0.5])  # [0, 1] -> [-1, 1]
     ])
 
 
