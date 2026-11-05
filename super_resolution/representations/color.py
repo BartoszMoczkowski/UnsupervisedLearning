@@ -8,6 +8,7 @@ Convention (see plan section 3.2):
 
 import torch
 import torch.nn as nn
+from einops import einsum
 
 # Full-range BT.601, RGB in [0, 1] -> Y in [0, 1], Cb/Cr centered in [-0.5, 0.5].
 _RGB_TO_YCBCR = torch.tensor(
@@ -31,7 +32,7 @@ class RGBToYCbCr(nn.Module):
         if rgb.ndim != 4 or rgb.shape[1] != 3:
             raise ValueError(f"Expected RGB tensor [B, 3, H, W], got {tuple(rgb.shape)}")
         matrix = self.transform.to(dtype=rgb.dtype)
-        return torch.einsum("oc,bcij->boij", matrix, rgb)
+        return einsum(matrix, rgb, "out in, b in h w -> b out h w")
 
 
 class YCbCrToRGB(nn.Module):
@@ -43,7 +44,7 @@ class YCbCrToRGB(nn.Module):
         if ycbcr.ndim != 4 or ycbcr.shape[1] != 3:
             raise ValueError(f"Expected YCbCr tensor [B, 3, H, W], got {tuple(ycbcr.shape)}")
         matrix = self.transform.to(dtype=ycbcr.dtype)
-        return torch.einsum("oc,bcij->boij", matrix, ycbcr)
+        return einsum(matrix, ycbcr, "out in, b in h w -> b out h w")
 
 
 def rgb_to_ycbcr(rgb: torch.Tensor) -> torch.Tensor:

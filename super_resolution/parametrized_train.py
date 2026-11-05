@@ -3,6 +3,7 @@ from pathlib import Path
 
 import comet_ml
 import torch
+from einops import rearrange
 from tqdm import tqdm
 
 from super_resolution.configs.elements.loss import DetailedGeneratorLoss
@@ -103,7 +104,7 @@ def _train_stage(
     for _ in tqdm(range(n_epochs), desc=stage.human_readable_name):
         for hr_img in train_loader:
             if hr_img.ndim == 5:
-                hr_img = hr_img.flatten(0, 1)
+                hr_img = rearrange(hr_img, "b n c h w -> (b n) c h w")
             hr_img = hr_img.to(target_device, non_blocking=is_cuda)
             hr_img = _apply_preprocessing(stage.general_preprocessing, hr_img)
             lr_img = _apply_preprocessing(stage.lr_preprocessing, hr_img)

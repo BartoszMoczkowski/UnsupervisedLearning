@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 import torch
+from einops import rearrange
 from torchvision.utils import save_image
 
 from super_resolution.configs.elements.stage import Stage
@@ -37,7 +38,7 @@ def evaluate_generator(
     for batch in dataloader:
         hr = batch.to(device).float() / 255.0 if batch.dtype == torch.uint8 else batch.to(device).float()
         if hr.ndim == 5:
-            hr = hr.flatten(0, 1)
+            hr = rearrange(hr, "b n c h w -> (b n) c h w")
         if max_images is not None and n_images + hr.shape[0] > max_images:
             keep = max_images - n_images
             hr = hr[:keep]

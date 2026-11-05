@@ -14,7 +14,7 @@ import math
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from einops import rearrange, einsum
 
 DEFAULT_BLOCK_SIZE = 8
 
@@ -31,20 +31,27 @@ def dct_matrix(block_size: int = DEFAULT_BLOCK_SIZE, dtype: torch.dtype = torch.
 
 def _blocks_from_image(images: torch.Tensor, block_size: int) -> torch.Tensor:
     """[B, C, H, W] -> [B, C, H/8, W/8, 8, 8] without any transform."""
-    batch, channels, height, width = images.shape
+    height, width = images.shape[-2:]
     if height % block_size or width % block_size:
         raise ValueError(
             f"H={height} and W={width} must be divisible by block_size={block_size}"
         )
-    blocks = images.reshape(batch, channels, height // block_size, block_size, width // block_size, block_size)
-    return blocks.permute(0, 1, 2, 4, 3, 5)  # [B, C, h, w, 8, 8]
+    return rearrange(
+        images,
+        "b c (bh bi) (bw bj) -> b c bh bw bi bj",
+        bi=block_size,
+        bj=block_size,
+    )
 
 
 def _image_from_blocks(blocks: torch.Tensor, block_size: int) -> torch.Tensor:
     """[B, C, h, w, 8, 8] -> [B, C, H, W]; exact inverse of _blocks_from_image."""
-    batch, channels, h, w = blocks.shape[:4]
-    images = blocks.permute(0, 1, 2, 4, 3, 5)  # [B, C, h, 8, w, 8]
-    return images.reshape(batch, channels, h * block_size, w * block_size)
+    return rearrange(
+        blocks,
+        "b c bh bw bi bj -> b c (bh bi) (bw bj)",
+        bi=block_size,
+        bj=block_size,
+    )
 
 
 def pack_blocks(blocks: torch.Tensor) -> torch.Tensor:
@@ -52,23 +59,24 @@ def pack_blocks(blocks: torch.Tensor) -> torch.Tensor:
     batch, channels, h, w, u, v = blocks.shape
     if u != v:
         raise ValueError("DCT blocks must be square")
-    packed = blocks.permute(0, 1, 4, 5, 2, 3)  # [B, C, u, v, h, w]
-    return packed.reshape(batch, channels * u * v, h, w)
+    return rearrange(blocks, "b c h w u v -> b (c u v) h w")
 
 
 def unpack_blocks(packed: torch.Tensor, channels: int) -> torch.Tensor:
     """[B, 64*C, h, w] -> [B, C, h, w, 8, 8]; exact inverse of pack_blocks."""
-    batch, total_channels, h, w = packed.shape
-    block_area = total_channels // channels
+    block_area = packed.shape[1] // channels
     block_size = int(math.isqrt(block_area))
     if block_size * block_size != block_area:
-        raise ValueError(f"Packed channel count {total_channels} is not 64*C")
-    blocks = packed.reshape(batch, channels, block_size, block_size, h, w)
-    return blocks.permute(0, 1, 4, 5, 2, 3)  # [B, C, h, w, u, v]
+        raise ValueError(f"Packed channel count {packed.shape[1]} is not 64*C")
+    return rearrange(packed, "b (c u v) h w -> b c h w u v", c=channels, u=block_size)
 
 
 class BlockDCT(nn.Module):
-    """Differentiable orthonormal block DCT: [B, C, H, W] -> [B, 64*C, H/8, W/8]."""
+    """Differentiable orthonormal block DCT: [B, C, H, W] -> [B, 64*C, H/8, W/8].
+
+    Coeff = D @ X @ D.T per block; the two einsum contractions keep batch, channel,
+    and block-grid axes untouched.
+    """
 
     def __init__(self, block_size: int = DEFAULT_BLOCK_SIZE) -> None:
         super().__init__()
@@ -77,14 +85,17 @@ class BlockDCT(nn.Module):
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         matrix = self.dct.to(dtype=images.dtype)
-        blocks = _blocks_from_image(images, self.block_size)  # [b,c,r,s,i,j]
-        tmp = torch.einsum("ui,bcrsij->bcrsuj", matrix, blocks)
-        coeffs = torch.einsum("vj,bcrsuj->bcrsuv", matrix, tmp)
+        blocks = _blocks_from_image(images, self.block_size)  # [b,c,bh,bw,i,j]
+        tmp = einsum(matrix, blocks, "u i, b c bh bw i j -> b c bh bw u j")
+        coeffs = einsum(matrix, tmp, "v j, b c bh bw u j -> b c bh bw u v")
         return pack_blocks(coeffs)
 
 
 class InverseBlockDCT(nn.Module):
-    """Differentiable inverse block DCT: [B, 64*C, H/8, W/8] -> [B, C, H, W]."""
+    """Differentiable inverse block DCT: [B, 64*C, H/8, W/8] -> [B, C, H, W].
+
+    X = D.T @ Coeff @ D per block (DCT-III through the transpose matrix).
+    """
 
     def __init__(self, block_size: int = DEFAULT_BLOCK_SIZE, channels: int = 3) -> None:
         super().__init__()
@@ -94,9 +105,9 @@ class InverseBlockDCT(nn.Module):
 
     def forward(self, packed: torch.Tensor) -> torch.Tensor:
         matrix = self.dct.to(dtype=packed.dtype)
-        coeffs = unpack_blocks(packed, self.channels)  # [b,c,r,s,u,v]
-        tmp = torch.einsum("ui,bcrsuv->bcrsiv", matrix, coeffs)  # D^T @ Coeff
-        blocks = torch.einsum("vj,bcrsiv->bcrsij", matrix, tmp)  # (D^T @ Coeff) @ D
+        coeffs = unpack_blocks(packed, self.channels)  # [b,c,bh,bw,u,v]
+        tmp = einsum(matrix, coeffs, "u i, b c bh bw u v -> b c bh bw i v")
+        blocks = einsum(matrix, tmp, "v j, b c bh bw i v -> b c bh bw i j")
         return _image_from_blocks(blocks, self.block_size)
 
 
