@@ -12,8 +12,6 @@ import sys
 from importlib import import_module
 from pathlib import Path
 
-from super_resolution.parametrized_train import train_experiment
-
 AVAILABLE_EXPERIMENTS = [
     "e0_baseline",
     "e1_frequency_losses",
@@ -39,6 +37,9 @@ def main() -> None:
 
     module = import_module(f"super_resolution.configs.experiments.{experiment_module}")
     experiment = module.build_experiment(dataset_root, n_seen_images)
+
+    from super_resolution.parametrized_train import train_experiment
+
     train_experiment(experiment)
 
 
