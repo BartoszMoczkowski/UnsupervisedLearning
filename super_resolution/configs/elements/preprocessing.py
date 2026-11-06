@@ -26,10 +26,15 @@ class RandomCropAugment(PreprocessingStep):
 
 
 class BicubicDownsample(PreprocessingStep):
-    """LR generation from cropped HR by bicubic downsampling with antialiasing (plan 2.2)."""
+    """LR generation from cropped HR by bicubic downsampling with antialiasing (plan 2.2).
+
+    Emits float32 in [0, 1] so the LR tensor is model-ready regardless of the order
+    in which the train loop applies the preprocessing steps.
+    """
 
     def __init__(self, scale: int = 4) -> None:
         self.scale = scale
+        self.to_float = tv2.ToDtype(torch.float32, scale=True)
 
     def apply(self, img: torch.Tensor):
         height, width = img.shape[-2:]
@@ -42,7 +47,7 @@ class BicubicDownsample(PreprocessingStep):
             interpolation=tv2.InterpolationMode.BICUBIC,
             antialias=True,
         )
-        return resize(img)
+        return self.to_float(resize(img))
 
 
 

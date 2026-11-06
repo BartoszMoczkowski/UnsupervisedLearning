@@ -1,16 +1,10 @@
-"""Experiment definitions for the SR architecture plan (plan section 7).
-
-Each module exposes build_experiment(dataset_root, ...) -> Experiment, built on the
-existing Stage/Experiment config architecture. Shared training defaults per plan 2.4.
-"""
-
-from super_resolution.configs.elements.dataset import WikiartDatasetConfig
-from super_resolution.configs.elements.loss import (
+from ..elements.dataset import WikiartDatasetConfig
+from ..elements.loss import (
     FrequencyAwareGeneratorLoss,
     GeneratorCharbonnierLossConfig,
     GeneratorL1LossConfig,
 )
-from super_resolution.configs.elements.model import (
+from ..elements.model import (
     AdamOptimizerConfig,
     DCTGeneratorModelConfig,
     DCTHybridModelConfig,
@@ -20,19 +14,21 @@ from super_resolution.configs.elements.model import (
     SRGANPaperDiscriminatorConfig,
     SRResNetModelConfig,
 )
-from super_resolution.configs.elements.preprocessing import (
+from ..elements.preprocessing import (
     BicubicDownsample,
     Int8To01Float,
     RandomCropAugment,
 )
-from super_resolution.configs.elements.stage import Experiment, Stage
+from ..elements.stage import Experiment, Stage
 
 PAPER_HR_CROP = 96
 PAPER_SCALE = 4
 
 
-def paper_dataset_config(dataset_root, batch_size: int = 16, hr_size: int = PAPER_HR_CROP) -> WikiartDatasetConfig:
-    """Paper-faithful data pipeline: HR crop -> spatial augment -> bicubic LR (plan 2.2)."""
+def paper_dataset_config(
+    dataset_root, batch_size: int = 16, hr_size: int = PAPER_HR_CROP
+) -> WikiartDatasetConfig:
+    """Paper-faithful data pipeline: HR crop -> spatial augment -> bicubic LR."""
     return WikiartDatasetConfig(
         root=dataset_root,
         hr_size=hr_size,

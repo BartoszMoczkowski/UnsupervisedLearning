@@ -9,36 +9,18 @@ Examples:
 """
 
 import sys
-from importlib import import_module
 from pathlib import Path
 
-AVAILABLE_EXPERIMENTS = [
-    "e0_baseline",
-    "e1_frequency_losses",
-    "e2_color",
-    "e3_dct_architectures",
-    "e4_perceptual",
-]
+from .configs.experiments.e0_baseline import build_experiment as e0_build
+from .parametrized_train import train_experiment
+
+DATASET_ROOT = Path("/data/wikiart-parquet-images")
+N_SEEN_IMAGES = 100_000
 
 
 def main() -> None:
-    if len(sys.argv) < 3:
-        print(__doc__)
-        print(f"Available experiments: {', '.join(AVAILABLE_EXPERIMENTS)}")
-        sys.exit(1)
-    experiment_module = sys.argv[1]
-    dataset_root = Path(sys.argv[2])
-    n_seen_images = int(sys.argv[3]) if len(sys.argv) > 3 else 100_000
 
-    if experiment_module not in AVAILABLE_EXPERIMENTS:
-        raise ValueError(
-            f"Unknown experiment '{experiment_module}'; choose from {AVAILABLE_EXPERIMENTS}"
-        )
-
-    module = import_module(f"super_resolution.configs.experiments.{experiment_module}")
-    experiment = module.build_experiment(dataset_root, n_seen_images)
-
-    from super_resolution.parametrized_train import train_experiment
+    experiment = e0_build(DATASET_ROOT, N_SEEN_IMAGES)
 
     train_experiment(experiment)
 

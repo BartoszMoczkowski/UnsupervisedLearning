@@ -5,12 +5,16 @@ import torch
 import torch.nn.functional as F
 from torch.nn import BCEWithLogitsLoss
 
-from super_resolution.losses.adversarial import GeneratorAdversarialLoss
-from super_resolution.losses.dct import DCTCoefficientLoss
-from super_resolution.losses.pixel import CharbonnierLoss, L1Loss, MSELoss
-from super_resolution.losses.pyramid import LaplacianPyramidLoss
-from super_resolution.losses.vgg import VGGFeatureLoss
-from super_resolution.losses.ycbcr import ChromaL1Loss, LumaPyramidLoss, YCbCrWeightedLoss
+from ...losses.adversarial import GeneratorAdversarialLoss
+from ...losses.dct import DCTCoefficientLoss
+from ...losses.pixel import CharbonnierLoss, L1Loss, MSELoss
+from ...losses.pyramid import LaplacianPyramidLoss
+from ...losses.vgg import VGGFeatureLoss
+from ...losses.ycbcr import (
+    ChromaL1Loss,
+    LumaPyramidLoss,
+    YCbCrWeightedLoss,
+)
 
 
 class GeneratorLoss(ABC):
@@ -63,7 +67,9 @@ class CompositeGeneratorLoss(GeneratorLoss):
     ) -> torch.Tensor:
         total_loss = 0
         for loss, weight in zip(self.losses, self.weights):
-            total_loss = total_loss + weight * loss.calculate_loss(sr_images, hr_images, discriminator)
+            total_loss = total_loss + weight * loss.calculate_loss(
+                sr_images, hr_images, discriminator
+            )
         return total_loss
 
 
@@ -74,7 +80,9 @@ class GeneratorLossList(Enum):
 
 
 class DiscriminatorLoss(ABC):
-    def calculate_loss(self, scores_fake: torch.Tensor, scores_real: torch.Tensor) -> torch.Tensor:
+    def calculate_loss(
+        self, scores_fake: torch.Tensor, scores_real: torch.Tensor
+    ) -> torch.Tensor:
         pass
 
 
@@ -82,10 +90,12 @@ class DiscriminatorBCELoss(DiscriminatorLoss):
     def __init__(self) -> None:
         self.bce_loss = BCEWithLogitsLoss()
 
-    def calculate_loss(self, scores_fake: torch.Tensor, scores_real: torch.Tensor) -> torch.Tensor:
-        return self.bce_loss(scores_fake, torch.zeros_like(scores_fake)) + self.bce_loss(
-            scores_real, torch.ones_like(scores_real)
-        )
+    def calculate_loss(
+        self, scores_fake: torch.Tensor, scores_real: torch.Tensor
+    ) -> torch.Tensor:
+        return self.bce_loss(
+            scores_fake, torch.zeros_like(scores_fake)
+        ) + self.bce_loss(scores_real, torch.ones_like(scores_real))
 
 
 class DiscriminatorLossList(Enum):
@@ -125,21 +135,32 @@ class ModuleGeneratorLoss(DetailedGeneratorLoss):
     def __init__(self, module) -> None:
         self.module = module
 
-    def calculate_loss_terms(self, sr_images, hr_images, discriminator=None) -> dict[str, torch.Tensor]:
+    def calculate_loss_terms(
+        self, sr_images, hr_images, discriminator=None
+    ) -> dict[str, torch.Tensor]:
         output = self.module(sr_images, hr_images)
-        return {"total": output["total"], **{f"loss_{k}": v for k, v in output["terms"].items()}}
+        return {
+            "total": output["total"],
+            **{f"loss_{k}": v for k, v in output["terms"].items()},
+        }
 
 
 class GeneratorL1LossConfig(DetailedGeneratorLoss):
-    def calculate_loss_terms(self, sr_images, hr_images, discriminator=None) -> dict[str, torch.Tensor]:
-        return ModuleGeneratorLoss(L1Loss()).calculate_loss_terms(sr_images, hr_images, discriminator)
+    def calculate_loss_terms(
+        self, sr_images, hr_images, discriminator=None
+    ) -> dict[str, torch.Tensor]:
+        return ModuleGeneratorLoss(L1Loss()).calculate_loss_terms(
+            sr_images, hr_images, discriminator
+        )
 
 
 class GeneratorCharbonnierLossConfig(DetailedGeneratorLoss):
     def __init__(self, eps: float = 1e-3) -> None:
         self.eps = eps
 
-    def calculate_loss_terms(self, sr_images, hr_images, discriminator=None) -> dict[str, torch.Tensor]:
+    def calculate_loss_terms(
+        self, sr_images, hr_images, discriminator=None
+    ) -> dict[str, torch.Tensor]:
         return ModuleGeneratorLoss(CharbonnierLoss(self.eps)).calculate_loss_terms(
             sr_images, hr_images, discriminator
         )
@@ -148,12 +169,12 @@ class GeneratorCharbonnierLossConfig(DetailedGeneratorLoss):
 class FrequencyAwareGeneratorLoss(DetailedGeneratorLoss):
     """Plan 5.8 recommended inexpensive composition:
 
-        L = L_base(RGB or YCbCr)
-          + lambda_pyr  * L_pyr(Y)
-          + lambda_chroma * (L1(Cb) + L1(Cr))
-          + optional lambda_dct * L_dct(Y)
-          + optional lambda_vgg * L_vgg(RGB)
-          + optional lambda_adv * L_adv   (requires discriminator)
+    L = L_base(RGB or YCbCr)
+      + lambda_pyr  * L_pyr(Y)
+      + lambda_chroma * (L1(Cb) + L1(Cr))
+      + optional lambda_dct * L_dct(Y)
+      + optional lambda_vgg * L_vgg(RGB)
+      + optional lambda_adv * L_adv   (requires discriminator)
     """
 
     def __init__(
@@ -195,14 +216,20 @@ class FrequencyAwareGeneratorLoss(DetailedGeneratorLoss):
                 "base": self.base_loss,
                 "pyr": LumaPyramidLoss(self.pyramid_levels, self.pyramid_band_weights)
                 if self.luma_pyramid
-                else LaplacianPyramidLoss(self.pyramid_levels, self.pyramid_band_weights),
+                else LaplacianPyramidLoss(
+                    self.pyramid_levels, self.pyramid_band_weights
+                ),
                 "chroma": ChromaL1Loss(),
                 "dct": DCTCoefficientLoss(self.dct_group_weights),
-                "ycbcr": YCbCrWeightedLoss(self.lambda_y, self.lambda_cb, self.lambda_cr),
+                "ycbcr": YCbCrWeightedLoss(
+                    self.lambda_y, self.lambda_cb, self.lambda_cr
+                ),
             }
         return self._module_cache
 
-    def calculate_loss_terms(self, sr_images, hr_images, discriminator=None) -> dict[str, torch.Tensor]:
+    def calculate_loss_terms(
+        self, sr_images, hr_images, discriminator=None
+    ) -> dict[str, torch.Tensor]:
         modules = self._modules()
         total = sr_images.new_zeros(())
         terms: dict[str, torch.Tensor] = {}
@@ -212,9 +239,10 @@ class FrequencyAwareGeneratorLoss(DetailedGeneratorLoss):
             base_total, base_terms = base_out["total"], base_out["terms"]
         elif modules["base"] is not None:
             base_out = modules["base"].calculate_loss_terms(sr_images, hr_images)
-            base_total, base_terms = base_out["total"], {
-                key: value for key, value in base_out.items() if key != "total"
-            }
+            base_total, base_terms = (
+                base_out["total"],
+                {key: value for key, value in base_out.items() if key != "total"},
+            )
         else:
             base_total, base_terms = None, {}
         if base_total is not None:

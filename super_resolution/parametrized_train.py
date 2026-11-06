@@ -154,7 +154,7 @@ def _train_stage(
 
 
 def train_experiment(experiment: Experiment):
-    comet_experiment = comet_ml.Experiment()
+    comet_experiment = comet_ml.Experiment(project_name="unsupervisedlearning")
     comet_experiment.set_name(experiment.name)
     target_device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
     previous_generator_state = None
