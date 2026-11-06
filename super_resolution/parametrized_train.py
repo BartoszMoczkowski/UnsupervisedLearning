@@ -101,8 +101,15 @@ def _train_stage(
     if discriminator is not None:
         discriminator.train()
 
-    for _ in tqdm(range(n_epochs), desc=stage.human_readable_name):
-        for hr_img in train_loader:
+    for _ in range(n_epochs):
+        steps_in_epoch = math.ceil(len(train_loader.dataset) / stage.dataset.batch_size)
+        progress = tqdm(
+            train_loader,
+            desc=f"{stage.human_readable_name} (epoch {n_epochs_completed + 1}/{n_epochs})",
+            total=steps_in_epoch,
+            unit="step",
+        )
+        for hr_img in progress:
             if hr_img.ndim == 5:
                 hr_img = rearrange(hr_img, "b n c h w -> (b n) c h w")
             hr_img = hr_img.to(target_device, non_blocking=is_cuda)
@@ -134,7 +141,18 @@ def _train_stage(
             loss.backward()
             generator_optimizer.step()
             n_seen_images += hr_img.shape[0]
-            if comet_experiment is not None and isinstance(stage.generator_loss, DetailedGeneratorLoss):
+
+            progress.set_postfix(
+                seen=f"{n_seen_images}/{stage.n_seen_images}",
+                loss=f"{loss.item():.4f}",
+                imgs_per_s=f"{progress.format_dict['rate'] * stage.dataset.batch_size:.0f}" if progress.format_dict.get("rate") else "?",
+            )
+            # Comet round-trips are expensive: log every 50 steps, not every step.
+            if (
+                comet_experiment is not None
+                and isinstance(stage.generator_loss, DetailedGeneratorLoss)
+                and (progress.n % 50 == 0)
+            ):
                 comet_experiment.log_metrics(
                     {f"train_{key}": value.item() for key, value in loss_terms.items()}
                 )
