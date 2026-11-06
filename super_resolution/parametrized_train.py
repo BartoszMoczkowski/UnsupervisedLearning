@@ -88,10 +88,10 @@ def _log_stage_visuals(
         )
         buffer = BytesIO()
         pil_image.save(buffer, format="PNG")
+        buffer.seek(0)
         comet_experiment.log_image(
-            buffer.getvalue(),
-            name=f"{stage.human_readable_name}/lr_sr_hr",
-            image_kwargs={"format": "png"},
+            buffer,
+            name=f"{stage.human_readable_name}/lr_sr_hr_{i}",
         )
     generator.train()
 
