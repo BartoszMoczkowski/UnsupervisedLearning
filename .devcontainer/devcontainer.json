@@ -7,7 +7,9 @@
     "source=Q:/training-data,target=/data,type=bind"
   ],
   "containerEnv": {
-    "TRAINING_DATA_DIR": "/data/wikiart-parquet"
+    "TRAINING_DATA_DIR": "/data/wikiart-parquet",
+    "COMET_API_KEY": "${localEnv:COMET_API_KEY}",
+    "COMET_WORKSPACE": "${localEnv:COMET_WORKSPACE}"
   },
   "remoteUser": "unsupervised",
   "customizations": {
