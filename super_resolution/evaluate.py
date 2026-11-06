@@ -104,7 +104,7 @@ def main() -> None:
     parser.add_argument("--stage-config", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=Path("eval_output"))
     parser.add_argument("--max-images", type=int, default=16)
-    parser.add_argument("--scale", type=int, default=4)
+    parser.add_argument("--scale", type=int, default=2)
     args = parser.parse_args()
 
     stage: Stage = Stage.from_stage_config(args.stage_config)

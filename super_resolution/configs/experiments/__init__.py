@@ -22,7 +22,7 @@ from ..elements.preprocessing import (
 from ..elements.stage import Experiment, Stage
 
 PAPER_HR_CROP = 96
-PAPER_SCALE = 4
+PAPER_SCALE = 2
 
 
 def paper_dataset_config(
