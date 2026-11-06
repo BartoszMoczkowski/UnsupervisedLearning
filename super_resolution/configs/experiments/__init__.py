@@ -67,7 +67,7 @@ def make_stage(
     discriminator_model: DiscriminatorModel | None = None,
     discriminator_loss=None,
     hr_size: int = PAPER_HR_CROP,
-    batch_size: int = 16,
+    batch_size: int = 256,
 ) -> Stage:
     general, hr_pre, lr_pre = standard_preprocessing(hr_size)
     return Stage(

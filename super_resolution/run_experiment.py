@@ -11,6 +11,8 @@ Examples:
 import sys
 from pathlib import Path
 
+import comet_ml
+
 from .configs.experiments.e0_baseline import build_experiment as e0_build
 from .parametrized_train import train_experiment
 

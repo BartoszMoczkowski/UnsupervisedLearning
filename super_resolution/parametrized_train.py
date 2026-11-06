@@ -1,34 +1,24 @@
 import math
+from io import BytesIO
 from pathlib import Path
 
 import comet_ml
 import torch
 from einops import rearrange
+from PIL import Image
 from tqdm import tqdm
 
 from super_resolution.configs.elements.loss import DetailedGeneratorLoss
-from super_resolution.configs.elements.stage import Experiment, Stage, StageState
+from super_resolution.configs.elements.stage import (
+    Experiment,
+    Stage,
+    StageState,
+    serializable_config,
+)
 
 
 def _serializable_config(value):
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, dict):
-        return {key: _serializable_config(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_serializable_config(item) for item in value]
-    if isinstance(value, torch.nn.Module):
-        return value.__class__.__name__
-    if hasattr(value, "__dict__"):
-        config = {
-            key: _serializable_config(item)
-            for key, item in value.__dict__.items()
-        }
-        config["type"] = value.__class__.__name__
-        return config
-    return str(value)
+    return serializable_config(value)
 
 
 def _apply_preprocessing(step, images: torch.Tensor) -> torch.Tensor:
@@ -56,6 +46,54 @@ def _save_state(
         state["discriminator_optimizer"] = discriminator_optimizer.state_dict()
     stage.save_stage_results(state)
     return state
+
+
+def _log_stage_visuals(
+    comet_experiment,
+    stage: Stage,
+    generator: torch.nn.Module,
+    target_device: str,
+    n_images: int = 5,
+) -> None:
+    """Pick n_images from the eval split and log LR|SR|HR strips to Comet."""
+    if comet_experiment is None:
+        return
+    _, _, eval_dataset = stage.dataset.load_datasets()
+    if len(eval_dataset) == 0:
+        return
+    generator.eval()
+
+    n_take = min(n_images, len(eval_dataset))
+    indices = torch.randperm(len(eval_dataset), generator=torch.Generator().manual_seed(43))[:n_take]
+
+    hr_all = torch.stack([eval_dataset[int(i)] for i in indices])
+    if hr_all.ndim == 5:
+        hr_all = rearrange(hr_all, "b n c h w -> (b n) c h w")
+    hr_all = hr_all.to(target_device)
+    hr_all = _apply_preprocessing(stage.hr_preprocessing, hr_all)
+    lr_all = _apply_preprocessing(stage.lr_preprocessing, hr_all)
+
+    with torch.no_grad():
+        sr_all = generator(lr_all)
+    sr_all = sr_all.clamp(0, 1)
+
+    # LR shown upscaled to HR size (nearest) so the strip is visually comparable.
+    lr_up = torch.nn.functional.interpolate(
+        lr_all, size=hr_all.shape[-2:], mode="nearest"
+    )
+    strip = torch.cat([lr_up, sr_all, hr_all], dim=3)  # concat along width
+    for i in range(strip.shape[0]):
+        pil_image = Image.fromarray(
+            (strip[i].permute(1, 2, 0).cpu().numpy() * 255).round().astype("uint8")
+        )
+        buffer = BytesIO()
+        pil_image.save(buffer, format="PNG")
+        comet_experiment.log_image(
+            buffer.getvalue(),
+            name=f"{stage.human_readable_name}/lr_sr_hr",
+            image_kwargs={"format": "png"},
+        )
+    generator.train()
 
 
 def _train_stage(
@@ -193,5 +231,8 @@ def train_experiment(experiment: Experiment):
             )
             previous_generator_state = state["generator"]
             previous_discriminator_state = state.get("discriminator")
+            final_generator = stage.generator_model.model_config.build().to(target_device)
+            final_generator.load_state_dict(previous_generator_state)
+            _log_stage_visuals(comet_experiment, stage, final_generator, target_device)
     finally:
         comet_experiment.end()

@@ -13,6 +13,30 @@ from super_resolution.configs.elements.preprocessing import PreprocessingStep
 EXPERIMENTS_PATH = Path("./experiments_data")
 
 
+def serializable_config(value):
+    """Convert a config object to plain Python data stable across processes.
+
+    torch/torchvision modules are reduced to their class name: their internal pickle
+    bytes are not stable across processes (and can embed hook state), which would
+    otherwise make Stage.compute_id() non-deterministic.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: serializable_config(item) for key, item in sorted(value.items())}
+    if isinstance(value, (list, tuple)):
+        return [serializable_config(item) for item in value]
+    if isinstance(value, torch.nn.Module):
+        return value.__class__.__name__
+    if hasattr(value, "__dict__"):
+        config = {key: serializable_config(item) for key, item in sorted(value.__dict__.items())}
+        config["type"] = value.__class__.__name__
+        return config
+    return str(value)
+
+
 class StageState(TypedDict):
     completed: bool
     n_epochs_completed: int
@@ -52,7 +76,7 @@ class Stage:
         config = self.__dict__.copy()
         del config["human_readable_name"]
         del config["n_seen_images"]
-        config_hash = hashlib.sha256(pickle.dumps(config)).hexdigest()[:16]
+        config_hash = hashlib.sha256(pickle.dumps(serializable_config(config))).hexdigest()[:16]
         return f"{self.human_readable_name}_{config_hash}"
 
     def data_path(self) -> Path:

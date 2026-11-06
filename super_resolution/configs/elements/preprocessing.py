@@ -14,6 +14,7 @@ class RandomCropAugment(PreprocessingStep):
     random crop, horizontal/vertical flips, and 90-degree rotations."""
 
     def __init__(self, hr_size: int) -> None:
+        self.hr_size = hr_size
         self.crop = tv2.Compose([
             tv2.RandomCrop(hr_size),
             tv2.RandomHorizontalFlip(),
@@ -54,6 +55,7 @@ class BicubicDownsample(PreprocessingStep):
 class RandomCropFlip(PreprocessingStep):
 
     def __init__(self, hr_size : int) -> None:
+        self.hr_size = hr_size
         self.crop = tv2.Compose([
             tv2.RandomResizedCrop(hr_size, antialias=True),
             tv2.RandomHorizontalFlip(),

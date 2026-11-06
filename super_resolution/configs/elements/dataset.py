@@ -66,10 +66,10 @@ class WikiartDatasetConfig(DatasetConfig):
         root: Path,
         hr_size: int,
         train_test_eval: tuple[float, float, float] = (0.98, 0.01, 0.01),
-        seed: int = 0,
+        seed: int = 43,
         batch_size: int = 16,
         n_crops: int = 1,
-        num_workers: int = 0,
+        num_workers: int = 4,
     ) -> None:
         self.root = Path(root)
         self.hr_size = hr_size
@@ -102,4 +102,5 @@ class WikiartDatasetConfig(DatasetConfig):
             num_workers=self.num_workers,
             pin_memory=torch.cuda.is_available(),
             persistent_workers=self.num_workers > 0,
+            prefetch_factor=2 if self.num_workers > 0 else None,
         )
