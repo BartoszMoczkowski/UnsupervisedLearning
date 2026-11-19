@@ -8,3 +8,4 @@ wikiart-parquet/
 router/prototype_images
 experiments_data/
 super_resolution/checkpoints/
+image_destroyer_previews/

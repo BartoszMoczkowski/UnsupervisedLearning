@@ -8,6 +8,7 @@ dependencies = [
     "torchvision",
     "torchaudio",
     "numpy",
+    "pillow",
     "scipy",
     "scikit-learn",
     "matplotlib",
