@@ -84,7 +84,7 @@ class BlockDCT(nn.Module):
         self.register_buffer("dct", dct_matrix(block_size))
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
-        matrix = self.dct.to(dtype=images.dtype)
+        matrix = self.dct.to(device=images.device, dtype=images.dtype)
         blocks = _blocks_from_image(images, self.block_size)  # [b,c,bh,bw,i,j]
         tmp = einsum(matrix, blocks, "u i, b c bh bw i j -> b c bh bw u j")
         coeffs = einsum(matrix, tmp, "v j, b c bh bw u j -> b c bh bw u v")
@@ -104,7 +104,7 @@ class InverseBlockDCT(nn.Module):
         self.register_buffer("dct", dct_matrix(block_size))
 
     def forward(self, packed: torch.Tensor) -> torch.Tensor:
-        matrix = self.dct.to(dtype=packed.dtype)
+        matrix = self.dct.to(device=packed.device, dtype=packed.dtype)
         coeffs = unpack_blocks(packed, self.channels)  # [b,c,bh,bw,u,v]
         tmp = einsum(matrix, coeffs, "u i, b c bh bw u v -> b c bh bw i v")
         blocks = einsum(matrix, tmp, "v j, b c bh bw i v -> b c bh bw i j")

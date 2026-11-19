@@ -28,8 +28,9 @@ class GaussianPyramid(nn.Module):
     def _blur(self, images: torch.Tensor) -> torch.Tensor:
         channels = images.shape[1]
         pad = self.kernel.numel() // 2
-        kernel_h = self.kernel.to(dtype=images.dtype).view(1, 1, -1, 1).expand(channels, 1, -1, 1)
-        kernel_w = self.kernel.to(dtype=images.dtype).view(1, 1, 1, -1).expand(channels, 1, 1, -1)
+        kernel = self.kernel.to(device=images.device, dtype=images.dtype)
+        kernel_h = kernel.view(1, 1, -1, 1).expand(channels, 1, -1, 1)
+        kernel_w = kernel.view(1, 1, 1, -1).expand(channels, 1, 1, -1)
         padded = F.pad(images, (pad, pad, 0, 0), mode="reflect")
         padded = F.pad(padded, (0, 0, pad, pad), mode="reflect")
         blurred = F.conv2d(padded, kernel_h, groups=channels)

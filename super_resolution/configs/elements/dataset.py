@@ -1,11 +1,27 @@
 import os
+import re
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from pathlib import Path
 
 import torch
 import torchvision
 from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision.transforms import v2 as tv2
+
+PathInput = str | Path
+RootInput = PathInput | Iterable[PathInput]
+
+
+def _normalize_roots(roots: RootInput) -> list[Path]:
+    if isinstance(roots, (str, Path)):
+        roots = [roots]
+    normalized = []
+    for root in roots:
+        path = Path(root)
+        if path not in normalized:
+            normalized.append(path)
+    return normalized
 
 
 def _find_image_files(root: Path, extensions: set[str]) -> list[Path]:
@@ -19,17 +35,57 @@ def _find_image_files(root: Path, extensions: set[str]) -> list[Path]:
     return sorted(files)
 
 
+def _split_name(path: Path) -> str | None:
+    match = re.match(r"^(train|test|eval)(?:_|$)", path.name.lower())
+    return match.group(1) if match else None
+
+
+def _discover_split_roots(roots: list[Path]) -> dict[str, list[Path]] | None:
+    """Find extractor split folders directly or one resolution level below each root."""
+    split_roots: dict[str, list[Path]] = {name: [] for name in ("train", "test", "eval")}
+    for root in roots:
+        candidates = [root]
+        if _split_name(root) is not None and root.parent.is_dir():
+            # A config pointed at train_98 should still find sibling test/eval dirs.
+            candidates.extend(sorted(path for path in root.parent.iterdir() if path.is_dir()))
+        elif root.is_dir():
+            children = sorted(path for path in root.iterdir() if path.is_dir())
+            candidates.extend(children)
+            for child in children:
+                if _split_name(child) is None:
+                    candidates.extend(
+                        sorted(path for path in child.iterdir() if path.is_dir())
+                    )
+        for candidate in candidates:
+            split = _split_name(candidate)
+            if split is not None and candidate not in split_roots[split]:
+                split_roots[split].append(candidate)
+    return split_roots if any(split_roots.values()) else None
+
+
 class WikiartDataset(Dataset):
-    def __init__(self, root: Path, hr_size: int, n_crops: int = 1) -> None:
+    def __init__(
+        self, root: RootInput, hr_size: int, n_crops: int = 1, allow_empty: bool = False
+    ) -> None:
         extensions = {".jpg", ".jpeg", ".png", ".webp"}
-        self.files = _find_image_files(root, extensions)
-        if not self.files:
+        self.roots = _normalize_roots(root)
+        self.files = sorted(
+            path
+            for root_path in self.roots
+            for path in _find_image_files(root_path, extensions)
+        )
+        if not self.files and not allow_empty:
+            roots_text = ", ".join(str(path) for path in self.roots) or "<no directories>"
             raise FileNotFoundError(
-                f"No images under {root}. This dataset expects decoded image files "
+                f"No images under {roots_text}. This dataset expects decoded image files "
                 f"({sorted(extensions)}), not parquet archives - extract them first "
                 f"or point the config at the extracted directory."
             )
-        print(f"WikiartDataset: found {len(self.files)} images under {root}")
+        if self.roots or not allow_empty:
+            print(
+                f"WikiartDataset: found {len(self.files)} images under "
+                + ", ".join(str(path) for path in self.roots)
+            )
         self.crop = tv2.Compose([
             tv2.RandomResizedCrop(hr_size, antialias=True),
             tv2.RandomHorizontalFlip(),
@@ -63,7 +119,7 @@ class DatasetConfig(ABC):
 class WikiartDatasetConfig(DatasetConfig):
     def __init__(
         self,
-        root: Path,
+        root: RootInput,
         hr_size: int,
         train_test_eval: tuple[float, float, float] = (0.98, 0.01, 0.01),
         seed: int = 43,
@@ -71,7 +127,9 @@ class WikiartDatasetConfig(DatasetConfig):
         n_crops: int = 1,
         num_workers: int = 4,
     ) -> None:
-        self.root = Path(root)
+        self.roots = _normalize_roots(root)
+        # Keep the original single-Path shape for backwards-compatible configs.
+        self.root = self.roots[0] if isinstance(root, (str, Path)) else self.roots
         self.hr_size = hr_size
         self.train_test_eval = train_test_eval
         self.seed = seed
@@ -80,7 +138,28 @@ class WikiartDatasetConfig(DatasetConfig):
         self.num_workers = num_workers
 
     def load_datasets(self) -> tuple[Dataset, Dataset, Dataset]:
-        dataset = WikiartDataset(self.root, self.hr_size, self.n_crops)
+        # Older pickled stage configs only have root, not the normalized roots list.
+        roots = getattr(self, "roots", _normalize_roots(self.root))
+        split_roots = _discover_split_roots(roots)
+        if split_roots is not None:
+            if not split_roots["train"]:
+                raise FileNotFoundError(
+                    "Pre-split dataset directories were found, but no train directory "
+                    f"was present under {roots}"
+                )
+            return tuple(
+                WikiartDataset(
+                    split_roots[split],
+                    self.hr_size,
+                    self.n_crops,
+                    allow_empty=split != "train",
+                )
+                for split in ("train", "test", "eval")
+            )  # type: ignore[return-value]
+
+        # Backwards compatibility: a directory of unsplit images is still split
+        # in memory using the original seeded random_split behavior.
+        dataset = WikiartDataset(roots, self.hr_size, self.n_crops)
         n_total = len(dataset)
         counts = [int(n_total * fraction) for fraction in self.train_test_eval]
         counts = [

@@ -25,6 +25,19 @@ def _apply_preprocessing(step, images: torch.Tensor) -> torch.Tensor:
     return step.apply(images) if step is not None else images
 
 
+def _configs_match(config_a, config_b) -> bool:
+    """True only when two model configs describe the identical architecture.
+
+    Warm-starting a stage from the previous stage's weights requires matching
+    state-dict keys; different architectures (e.g. E3-PACK vs E3-DCT) would
+    otherwise crash in load_state_dict with missing/unexpected keys.
+    """
+    return (
+        type(config_a) is type(config_b)
+        and serializable_config(config_a) == serializable_config(config_b)
+    )
+
+
 def _save_state(
     stage: Stage,
     generator: torch.nn.Module,
@@ -215,6 +228,7 @@ def train_experiment(experiment: Experiment):
     target_device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
     previous_generator_state = None
     previous_discriminator_state = None
+    previous_stage = None
 
     try:
         for stage in experiment.stages:
@@ -222,10 +236,25 @@ def train_experiment(experiment: Experiment):
                 _serializable_config(stage),
                 prefix=stage.compute_id(),
             )
+            generator_state, discriminator_state = None, None
+            if previous_stage is not None and _configs_match(
+                stage.generator_model.model_config,
+                previous_stage.generator_model.model_config,
+            ):
+                generator_state = previous_generator_state
+                if (
+                    stage.discriminator_model is not None
+                    and previous_stage.discriminator_model is not None
+                    and _configs_match(
+                        stage.discriminator_model.model_config,
+                        previous_stage.discriminator_model.model_config,
+                    )
+                ):
+                    discriminator_state = previous_discriminator_state
             state = _train_stage(
                 stage,
-                previous_generator_state,
-                previous_discriminator_state,
+                generator_state,
+                discriminator_state,
                 target_device,
                 comet_experiment,
             )
@@ -234,5 +263,6 @@ def train_experiment(experiment: Experiment):
             final_generator = stage.generator_model.model_config.build().to(target_device)
             final_generator.load_state_dict(previous_generator_state)
             _log_stage_visuals(comet_experiment, stage, final_generator, target_device)
+            previous_stage = stage
     finally:
         comet_experiment.end()

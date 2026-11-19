@@ -20,20 +20,33 @@ from torchvision.transforms import v2 as tv2
 from tqdm import tqdm
 from generative_adversial_network import DiscriminatorNetwork, GeneratorNetwork
 import torchvision
+from collections.abc import Iterable
+
 DATA_DIR = os.environ.get("TRAINING_DATA_DIR", "./wikiart-parquet")
-IMAGES_DIR = Path(os.environ.get("IMAGES_DIR", DATA_DIR + "-images/train"))
+_image_dirs = os.environ.get(
+    "IMAGES_DIRS",
+    os.environ.get("IMAGES_DIR", DATA_DIR + "-images/300/train_98"),
+)
+IMAGES_DIR = [Path(root) for root in _image_dirs.split(os.pathsep) if root]
 SCALE = 4
 VGG_FEATURE_SCALE = 12.75
 
 CKPT_DIR = Path(os.environ.get("CKPT_DIR", "./checkpoints"))
 
 class WikiartDataset(Dataset):
-    def __init__(self, root: Path, hr_size: int, n_crops: int = 4):
+    def __init__(
+        self, root: Path | str | Iterable[Path | str], hr_size: int, n_crops: int = 4
+    ):
         extensions = {".jpg", ".jpeg", ".png", ".webp"}
-        self.files = sorted(p for p in root.rglob("*")
-                            if p.is_file() and p.suffix.lower() in extensions)
+        roots = [Path(root)] if isinstance(root, (str, Path)) else [Path(p) for p in root]
+        self.files = sorted(
+            path
+            for root_path in roots
+            for path in root_path.rglob("*")
+            if path.is_file() and path.suffix.lower() in extensions
+        )
         if not self.files:
-            raise FileNotFoundError(f"No images under {root}")
+            raise FileNotFoundError(f"No images under {roots}")
         # per-crop transform; each call samples a new crop window + flip
         self.crop = tv2.Compose([
             tv2.RandomResizedCrop(hr_size, antialias=True),

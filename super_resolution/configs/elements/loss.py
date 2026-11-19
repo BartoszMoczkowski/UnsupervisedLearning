@@ -231,6 +231,12 @@ class FrequencyAwareGeneratorLoss(DetailedGeneratorLoss):
         self, sr_images, hr_images, discriminator=None
     ) -> dict[str, torch.Tensor]:
         modules = self._modules()
+        # These modules live in a plain dict cache, so .to(device) on the model
+        # never reaches them; move any nn.Module entries onto the input device.
+        device = sr_images.device
+        for module in modules.values():
+            if isinstance(module, torch.nn.Module):
+                module.to(device)
         total = sr_images.new_zeros(())
         terms: dict[str, torch.Tensor] = {}
 
@@ -270,7 +276,7 @@ class FrequencyAwareGeneratorLoss(DetailedGeneratorLoss):
                 terms[f"dct_{key}"] = value
 
         if self.lambda_vgg:
-            vgg_out = _get_vgg_loss(self.vgg_layer)(sr_images, hr_images)
+            vgg_out = _get_vgg_loss(self.vgg_layer, sr_images.device)(sr_images, hr_images)
             total = total + self.lambda_vgg * vgg_out["total"]
             terms["weighted_vgg"] = self.lambda_vgg * vgg_out["total"]
             for key, value in vgg_out["terms"].items():
@@ -296,11 +302,11 @@ class FrequencyAwareGeneratorLoss(DetailedGeneratorLoss):
 _VGG_LOSS_CACHE: dict[str, VGGFeatureLoss] = {}
 
 
-def _get_vgg_loss(layer: str) -> VGGFeatureLoss:
+def _get_vgg_loss(layer: str, device: torch.device) -> VGGFeatureLoss:
     """Module-level cache: keeps pretrained VGG19 out of pickled Stage configs."""
     if layer not in _VGG_LOSS_CACHE:
         _VGG_LOSS_CACHE[layer] = VGGFeatureLoss(layer)
-    return _VGG_LOSS_CACHE[layer]
+    return _VGG_LOSS_CACHE[layer].to(device)
 
 
 class GeneratorLossListNew(Enum):
